@@ -61,7 +61,7 @@ toFigure ::
   FigureSpec ->
   PlotM Block
 toFigure fmt spec = do
-  target <- figurePath spec
+target <- figurePath spec
   scp <- pack <$> sourceCodePath spec
   sourceLabel <- asksConfig sourceCodeLabel -- Allow the possibility for non-english labels
 
@@ -75,21 +75,31 @@ toFigure fmt spec = do
 
   let srcLink = link scp mempty (str sourceLabel)
       attrs' = blockAttrs spec
+      figMode = figureMode spec
       captionLinks = mconcat [" (", srcLink, ")"]
       caption' = if withSource spec then cap <> captionLinks else cap
-  builder attrs' target caption'
+  builder figMode attrs' target caption'
   where
     builder = case saveFormat spec of
-      HTML -> interactiveBlock
+      HTML  -> interactiveBlock
       LaTeX -> latexInput
-      _ -> figure
+      _     -> figure           
 
 figure ::
+  FigureMode ->
   Attr ->
   FilePath ->
   Inlines ->
   PlotM Block
-figure as fp caption' =
+figure Inline as fp caption' =
+  maybe
+    (liftIO $ throwIO PandocBuilderException) -- We cannot build a single `Block` unfortunately, so we must be ready to throw an exception.
+    pure
+    . listToMaybe
+    . toList
+    $ plain $
+      imageWith as (pack fp) mempty caption'
+figure _fm as fp caption' =
   maybe
     (liftIO $ throwIO PandocBuilderException) -- We cannot build a single `Block` unfortunately, so we must be ready to throw an exception.
     pure
@@ -127,8 +137,24 @@ figure as fp caption' =
 -- </figure>
 --     |]
 
-latexInput :: Attr -> FilePath -> Inlines -> PlotM Block
-latexInput (_, _, attrs) fp caption' = do
+-- | Normalize path to include within document.
+normalizePath :: FilePath -> FilePath
+normalizePath = map f
+  where
+    f '\\' = '/'
+    f x = x
+
+-- | LaTeX source for embedding of the figure.
+latexInput :: FigureMode -> Attr -> FilePath -> Inlines -> PlotM Block
+latexInput Inline _ fp _caption' = do
+  return $
+    RawBlock
+      "latex"
+      [st|
+        \centering
+        \input{#{pack $ normalizePath $ fp}}
+        |]
+latexInput fm (_, _, attrs) fp caption' = do
   renderedCaption' <- writeLatex caption'
   let renderedCaption =
         if renderedCaption' /= ""
@@ -137,31 +163,39 @@ latexInput (_, _, attrs) fp caption' = do
   -- We need to propagate extra attributes, for example, to control
   -- figure sizes. See #38
   let renderedExtraAttributes = mconcat $ [key <> "=" <> value | (key, value) <- attrs]
+      figEnv = case fm of
+                 FloatingFigure -> "figure" :: Text
+                 WrappedFigure  -> "wrapfig"
+                 s              -> error $ "Impossible: " <> show s <> " in figure section"
   return $
     RawBlock
       "latex"
       [st|
-    \begin{figure}
+    \begin{#{figEnv}}
         \centering
         \includegraphics[#{renderedExtraAttributes}]{#{pack $ normalizePath $ fp}}
         #{renderedCaption}
-    \end{figure}
+    \end{#{figEnv}}
         |]
-  where
-    normalizePath = map f
-      where
-        f '\\' = '/'
-        f x = x
 
 interactiveBlock ::
-  Attr ->
-  FilePath ->
-  Inlines ->
+  FigureMode ->
+  Attr       ->
+  FilePath   ->
+  Inlines    ->
   PlotM Block
-interactiveBlock _ fp caption' = do
+interactiveBlock Inline _ fp caption' = do
+  htmlpage <- liftIO $ T.readFile fp
+  return $
+    RawBlock
+      "html5"
+      (extractPlot htmlpage)
+interactiveBlock fm _ fp caption' = do
   -- TODO: should we instead include the scripts in the "include-after"
   --       template variable?
   --       See https://github.com/jgm/pandoc/issues/6582
+  -- TODO: wrap HTML figures with <img src="..." align="left"> without <div/>
+  --       https://www.uvm.edu/~bnelson/computer/html/wrappingtextaroundimages.html
   htmlpage <- liftIO $ T.readFile fp
   renderedCaption <- writeHtml caption'
   return $

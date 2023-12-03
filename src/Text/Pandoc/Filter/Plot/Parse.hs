@@ -117,6 +117,7 @@ parseFigureSpec block@(CodeBlock (id', classes, attrs) _) = do
               dpi = maybe defDPI (read . unpack) (Map.lookup (tshow DpiK) attrs')
               extraAttrs = Map.toList extraAttrs'
               blockAttrs = (id', filter (/= cls toolkit) classes, filteredAttrs)
+              figureMode = maybe FloatingFigure (fromString . unpack) $ Map.lookup (tshow ModeK) attrs'
 
           debug $ "Propagating attributes unrelated to pandoc-plot: " <> tshow blockAttrs
 
