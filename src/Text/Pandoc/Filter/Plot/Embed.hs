@@ -61,7 +61,7 @@ toFigure ::
   FigureSpec ->
   PlotM Block
 toFigure fmt spec = do
-target <- figurePath spec
+  target <- figurePath spec
   scp <- pack <$> sourceCodePath spec
   sourceLabel <- asksConfig sourceCodeLabel -- Allow the possibility for non-english labels
 
@@ -83,7 +83,7 @@ target <- figurePath spec
     builder = case saveFormat spec of
       HTML  -> interactiveBlock
       LaTeX -> latexInput
-      _     -> figure           
+      _     -> figure
 
 figure ::
   FigureMode ->
@@ -154,6 +154,22 @@ latexInput Inline _ fp _caption' = do
         \centering
         \input{#{pack $ normalizePath $ fp}}
         |]
+latexInput ColumnFigure _ fp caption' = do
+  renderedCaption' <- writeLatex caption'
+  let renderedCaption =
+        if renderedCaption' /= ""
+          then [st|\caption{#{renderedCaption'}}|]
+          else ""
+  return $
+    RawBlock
+      "latex"
+      [st|
+    \begin{minipage}{\columnwidth}
+        \centering
+        \input{#{pack $ normalizePath $ fp}}
+        #{renderedCaption}
+    \end{minipage}
+        |]
 latexInput fm (_, _, attrs) fp caption' = do
   renderedCaption' <- writeLatex caption'
   let renderedCaption =
@@ -196,6 +212,7 @@ interactiveBlock fm _ fp caption' = do
   --       See https://github.com/jgm/pandoc/issues/6582
   -- TODO: wrap HTML figures with <img src="..." align="left"> without <div/>
   --       https://www.uvm.edu/~bnelson/computer/html/wrappingtextaroundimages.html
+  -- TODO: single-column HTML figures without <div/>.
   htmlpage <- liftIO $ T.readFile fp
   renderedCaption <- writeHtml caption'
   return $
