@@ -1,0 +1,29 @@
+# Snapshot providing pandoc 3.11 -- the newest pandoc in any Stackage snapshot
+# as of 2026-10-04. LTS 24 (the newest LTS) only has pandoc 3.7.0.2.
+#
+# Why a dated nightly rather than LTS: this package links the pandoc library
+# directly, so the snapshot choice *is* the pandoc version choice. Nightly is
+# the only resolver that tracks pandoc closely. It also ships pandoc-plot
+# 1.9.2 itself, so this is a configuration Stackage has actually built.
+snapshot: nightly-2026-10-04
+
+packages:
+- .
+
+# No extra-deps are needed: nightly already provides pandoc 3.11,
+# pandoc-types 1.23.1.2 and every other dependency at a version inside
+# pandoc-plot's bounds.
+#
+# To move past pandoc 3.11, bump the snapshot date above rather than reaching
+# for extra-deps. Hackage has pandoc 3.12, but it is in no snapshot yet, and
+# pulling it in by hand means bumping ~14 transitive dependencies
+# (citeproc 0.9 -> 0.14, doclayout 0.5 -> 0.6, typst 0.8 -> 0.12, texmath,
+# zip-archive, skylighting, commonmark x3, djot, doctemplates, emojis,
+# pandoc-types) that no tested set currently provides.
+
+# Mirrors the allow-newer in cabal.project, which stack needs separately.
+allow-newer-deps:
+- haddock-library:base
+
+# Nightly pins GHC 9.12.4. Accept a newer minor if one is installed locally.
+compiler-check: newer-minor
