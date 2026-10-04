@@ -404,6 +404,96 @@ testAttributesPreservedOnFigure tk =
   where
     extractCaption (B.Figure _ (Caption _ caption) _) = caption
 
+-------------------------------------------------------------------------------
+-- Test that each figure mode selects a distinct embedding.
+--
+-- The float, wrapfig, column-minipage and inline branches of
+-- "Text.Pandoc.Filter.Plot.Embed" are easy to collapse into one another when
+-- that module is refactored, and a silent collapse quietly turns a requested
+-- wrapped or single-column figure back into an ordinary float. Assert on the
+-- block shape (float vs inline) and, separately, on the emitted LaTeX, so that
+-- float/wrapped/column cannot be confused with each other either.
+--
+-- The mode is given as its documented @mode=@ spelling so that the attribute
+-- parser is covered as well.
+testFigureModes :: Toolkit -> TestTree
+testFigureModes tk =
+  testGroup
+    "figure modes"
+    ( [ testCase "mode is an advertised block key" $
+          assertBool
+            ("\"mode\" missing from " <> show (availableBlockKeys :: [String]))
+            ("mode" `elem` availableBlockKeys),
+        assertShape "float" isFloat,
+        assertShape "wrappedfigure" isFloat,
+        assertShape "column" isFloat,
+        assertShape "inline" (not . isFloat)
+      ]
+        -- The LaTeX environments are only reachable when the toolkit can save
+        -- to LaTeX in the first place.
+        ++ [testFigureModesLatex | LaTeX `elem` supportedSaveFormats tk]
+    )
+  where
+    isFloat B.Figure{} = True
+    isFloat _ = False
+
+    assertShape :: String -> (Block -> Bool) -> TestTree
+    assertShape mode p =
+      testCase (mode <> " selects the expected block shape") $ do
+        tempDir <- tempDirFor mode
+        block <- render mode PNG tempDir
+        assertBool (mode <> ": expected a float block, got " <> show block) (p block)
+
+    -- The LaTeX environments are only reachable when the toolkit can save to
+    -- LaTeX in the first place; this group is added conditionally above.
+    latexEnvironments :: [(String, String)]
+    latexEnvironments =
+      [ ("float", "\\begin{figure}"),
+        ("wrappedfigure", "\\begin{wrapfig}"),
+        ("column", "\\begin{minipage}{\\columnwidth}"),
+        -- An inline figure embeds the source file and opens no environment.
+        ("inline", "\\input{")
+      ]
+
+    testFigureModesLatex :: TestTree
+    testFigureModesLatex =
+      testGroup
+        "figure modes (LaTeX)"
+        [ assertLatex mode expected
+        | (mode, expected) <- latexEnvironments
+        ]
+      where
+        assertLatex :: String -> String -> TestTree
+        assertLatex mode expected =
+          testCase (mode <> " emits " <> expected) $ do
+            tempDir <- tempDirFor ("latex-" <> mode)
+            block <- render mode LaTeX tempDir
+            latex <- extractLatex block
+            assertBool
+              (mode <> ": expected " <> expected <> " in " <> show latex)
+              (expected `isInfixOf` latex)
+
+    extractLatex :: Block -> IO String
+    extractLatex (B.RawBlock "latex" content) = return (unpack content)
+    extractLatex other =
+      assertFailure ("expected a raw LaTeX block, got " <> show other)
+
+    render :: String -> SaveFormat -> FilePath -> IO Block
+    render mode fmt tempDir =
+      let cb =
+            addFigureMode mode $
+              addCaption "a caption" $
+                addSaveFormat fmt $
+                  addDirectory tempDir $
+                    codeBlock tk (trivialContent tk)
+       in runPlotM Nothing defaultTestConfig $ make cb
+
+    tempDirFor :: String -> IO FilePath
+    tempDirFor slug = do
+      tempDir <- (</> ("test-figure-mode-" <> slug <> "-" <> unpack (cls tk))) <$> getTemporaryDirectory
+      ensureDirectoryExistsAndEmpty tempDir
+      return tempDir
+
 codeBlock :: Toolkit -> Script -> Block
 codeBlock tk script = CodeBlock (mempty, [cls tk], mempty) script
 
@@ -453,6 +543,13 @@ addDPI dpi (CodeBlock (id', cls, attrs) script) =
 addWithSource :: Bool -> Block -> Block
 addWithSource yn (CodeBlock (id', cls, attrs) script) =
   CodeBlock (id', cls, attrs ++ [(tshow WithSourceK, pack . show $ yn)]) script
+
+-- | Set the @mode@ attribute selecting the figure mode. Takes the user-facing
+-- spelling (e.g. @\"wrappedfigure\"@) rather than a @FigureMode@, so that the
+-- @IsString@ parser is exercised too.
+addFigureMode :: String -> Block -> Block
+addFigureMode mode (CodeBlock (id', cls, attrs) script) =
+  CodeBlock (id', cls, attrs ++ [(tshow ModeK, pack mode)]) script
 
 setAttrs :: Attr -> Block -> Block
 setAttrs attrs (CodeBlock _ script) = CodeBlock attrs script

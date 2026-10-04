@@ -60,6 +60,7 @@ toolkitSuite tk =
       testMarkdownFormattingCaption1,
       testMarkdownFormattingCaption2,
       testAttributesPreservedOnFigure,
+      testFigureModes,
       testCleanOutputDirs,
       testChecksFail
     ]
