@@ -39,6 +39,7 @@ rm help.txt
 rm help-clean.txt
 rm help-toolkits.txt
 rm help-config.txt
+rm help-block-keys.txt
 
 # Manual may have changed - update binary
 cabal install --overwrite-policy=always
