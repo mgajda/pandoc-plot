@@ -255,7 +255,7 @@ contains two extra parameters, `width=50mm` and `height=60mm`. When rendered wit
 \end{figure}
 ````
 
-The `pandoc-plot block-keys --help` option will list all supported parameters:
+The `pandoc-plot block-keys` command will list all supported parameters:
 
 ```{.bash include=help-block-keys.txt}
 ```
